@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "site": "sovereign-infrastructure-d86fa",
+    "public": "dist/webview",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
