@@ -1,4 +1,27 @@
-# Pixel Agents
+# Pixel Agents (Sovereign Enterprises Recreation)
+
+This is a recreation of the `pablodelucca/pixel-agents` project by Sovereign Enterprises. The goal is to independently implement and track the project's architecture and behavior.
+
+**Source Repository:** https://github.com/pablodelucca/pixel-agents
+**Target Repository:** https://github.com/JKrazzzy/pixel-agents-sovereign
+
+## Sovereign Enterprises Recreation Status
+
+**Progress %:** 10% (Initial file copy and commit complete)
+**Last Commit:** `48358e4` - Initial recreation of pixel-agents
+**Current Branch:** `main`
+
+**Remaining Tasks:**
+1.  Install project dependencies (`npm install` in root and `webview-ui`).
+2.  Build the project (`npm run build`).
+3.  Run and test the project to ensure functionality.
+4.  Refine project architecture and behavior to match the source.
+5.  Document specific recreation notes and decisions.
+
+**Confidentiality Gate:** PASS (No secrets detected by local scan)
+**Public Repo Audit:** PASS (Local scan was clean; no incidents to report)
+
+---
 
 A VS Code extension that turns your AI coding agents into animated pixel art characters in a virtual office.
 
@@ -29,21 +52,25 @@ This is the source code for the free [Pixel Agents extension for VS Code](https:
 - VS Code 1.109.0 or later
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 
-## Getting Started
+## Getting Started (Sovereign Enterprises Recreation)
 
-If you just want to use Pixel Agents, the easiest way is to download the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents). If you want to play with the code, develop, or contribute, then:
+To get this recreated project running locally:
 
-### Install from source
-
-```bash
-git clone https://github.com/pablodelucca/pixel-agents.git
-cd pixel-agents
-npm install
-cd webview-ui && npm install && cd ..
-npm run build
-```
-
-Then press **F5** in VS Code to launch the Extension Development Host.
+1.  **Clone this repository:**
+    ```bash
+    git clone https://github.com/JKrazzzy/pixel-agents-sovereign.git
+    cd pixel-agents-sovereign
+    ```
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    cd webview-ui && npm install && cd ..
+    ```
+3.  **Build the project:**
+    ```bash
+    npm run build
+    ```
+4.  Then press **F5** in VS Code to launch the Extension Development Host.
 
 ### Usage
 
