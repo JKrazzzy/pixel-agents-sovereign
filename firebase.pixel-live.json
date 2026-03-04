@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "site": "pixel-agents-live-unr",
+    "public": "dist/webview",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
