@@ -121,7 +121,18 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const {
+    agents,
+    selectedAgent,
+    agentNames,
+    agentTools,
+    agentStatuses,
+    subagentTools,
+    subagentCharacters,
+    layoutReady,
+    loadedAssets,
+    workspaceFolders,
+  } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
 
@@ -288,6 +299,7 @@ function App() {
       <ToolOverlay
         officeState={officeState}
         agents={agents}
+        agentNames={agentNames}
         agentTools={agentTools}
         agentStatuses={agentStatuses}
         subagentCharacters={subagentCharacters}
@@ -301,6 +313,7 @@ function App() {
         <DebugView
           agents={agents}
           selectedAgent={selectedAgent}
+          agentNames={agentNames}
           agentTools={agentTools}
           agentStatuses={agentStatuses}
           subagentTools={subagentTools}

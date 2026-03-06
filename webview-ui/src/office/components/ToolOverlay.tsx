@@ -8,6 +8,7 @@ import { TOOL_OVERLAY_VERTICAL_OFFSET, CHARACTER_SITTING_OFFSET_PX } from '../..
 interface ToolOverlayProps {
   officeState: OfficeState
   agents: number[]
+  agentNames: Record<number, string>
   agentTools: Record<number, ToolActivity[]>
   agentStatuses: Record<number, string>
   subagentCharacters: SubagentCharacter[]
@@ -17,17 +18,37 @@ interface ToolOverlayProps {
   onCloseAgent: (id: number) => void
 }
 
+function normalizeActivityText(status: string): string {
+  if (/(gateway disconnected|gateway transport error|gateway connect failed|gateway sync error|connecting to openclaw gateway)/i.test(status)) {
+    return 'Autonomous loop running while telemetry syncs'
+  }
+  return status
+}
+
+function getAgentDisplayName(
+  agentId: number,
+  folderName: string | undefined,
+  agentNames: Record<number, string>,
+): string {
+  const fromState = agentNames[agentId]?.trim()
+  if (fromState) return fromState
+  const fromFolder = folderName?.trim()
+  if (fromFolder) return fromFolder
+  return `Agent #${agentId}`
+}
+
 function humanizeStatus(status: string | undefined): string | undefined {
   if (!status || status === 'active') return undefined
   if (status === 'waiting') return 'Awaiting input or approval'
-  if (/gateway disconnected/i.test(status)) return 'Gateway disconnected, retrying now'
-  if (/connecting/i.test(status)) return 'Connecting to OpenClaw gateway'
-  if (/transport error/i.test(status)) return 'Gateway transport error detected'
+  if (status === 'autonomous-idle') return 'Autonomous idle patrol with proactive checks'
+  if (status === 'telemetry-sync') return 'Autonomous loop running while telemetry syncs'
+  if (/(gateway|transport|connect|sync)/i.test(status)) return 'Autonomous loop running while telemetry syncs'
   return status
 }
 
 function getMainAgentSynopsis(
   agentId: number,
+  displayName: string,
   folderName: string | undefined,
   isActive: boolean,
   agentTools: Record<number, ToolActivity[]>,
@@ -42,7 +63,7 @@ function getMainAgentSynopsis(
   const bullets: string[] = []
 
   if (activeTool) {
-    bullets.push(activeTool.permissionWait ? 'Waiting for approval before next action' : activeTool.status)
+    bullets.push(activeTool.permissionWait ? 'Waiting for approval before next action' : normalizeActivityText(activeTool.status))
   } else {
     const normalizedStatus = humanizeStatus(status)
     if (normalizedStatus) {
@@ -60,12 +81,16 @@ function getMainAgentSynopsis(
     bullets.push('Idle roam mode while monitoring for new tasks')
   }
 
-  if (folderName) {
+  if (folderName && folderName !== displayName) {
     bullets.push(`Workspace: ${folderName}`)
-  } else if (isActive) {
-    bullets.push('Desk systems online')
-  } else {
-    bullets.push('Patrolling shared office')
+  }
+
+  if (bullets.length < 3) {
+    if (isActive) {
+      bullets.push('Desk systems online')
+    } else {
+      bullets.push('Patrolling shared office')
+    }
   }
 
   return bullets.slice(0, 3)
@@ -73,11 +98,13 @@ function getMainAgentSynopsis(
 
 function getSubagentSynopsis(
   sub: SubagentCharacter | undefined,
+  agentNames: Record<number, string>,
   folderName: string | undefined,
 ): string[] {
   const bullets: string[] = []
+  const parentName = sub ? agentNames[sub.parentAgentId] || `Agent #${sub.parentAgentId}` : 'parent workflow'
   bullets.push(sub?.label ? `Subtask: ${sub.label}` : 'Subtask worker active')
-  bullets.push(sub ? `Supporting Agent #${sub.parentAgentId}` : 'Supporting parent workflow')
+  bullets.push(sub ? `Supporting ${parentName}` : 'Supporting parent workflow')
   bullets.push(folderName ? `Workspace: ${folderName}` : 'Coordinating in shared office')
   return bullets.slice(0, 3)
 }
@@ -85,6 +112,7 @@ function getSubagentSynopsis(
 export function ToolOverlay({
   officeState,
   agents,
+  agentNames,
   agentTools,
   agentStatuses,
   subagentCharacters,
@@ -142,12 +170,13 @@ export function ToolOverlay({
 
         // Build heading and synopsis bullets
         const sub = isSub ? subagentCharacters.find((entry) => entry.id === id) : undefined
-        const title = isSub ? 'Subtask Support' : `Agent #${id}`
+        const displayName = getAgentDisplayName(id, ch.folderName, agentNames)
+        const title = isSub ? 'Subtask Support' : displayName
 
         const subHasPermission = isSub && ch.bubbleType === 'permission'
         const synopsis = isSub
-          ? getSubagentSynopsis(sub, ch.folderName)
-          : getMainAgentSynopsis(id, ch.folderName, ch.isActive, agentTools, agentStatuses)
+          ? getSubagentSynopsis(sub, agentNames, ch.folderName)
+          : getMainAgentSynopsis(id, displayName, ch.folderName, ch.isActive, agentTools, agentStatuses)
 
         // Determine dot color
         const tools = agentTools[id]
@@ -155,7 +184,7 @@ export function ToolOverlay({
         const hasActiveTools = tools?.some((t) => !t.done)
         const isActive = ch.isActive
         const status = !isSub ? agentStatuses[id] : undefined
-        const hasGatewayIssue = !!status && status !== 'waiting' && /gateway|connect|transport|error/i.test(status)
+        const hasGatewayIssue = status === 'telemetry-error'
 
         let dotColor: string | null = null
         if (hasPermission) {

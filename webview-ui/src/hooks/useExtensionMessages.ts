@@ -43,6 +43,7 @@ export interface WorkspaceFolder {
 export interface ExtensionMessageState {
   agents: number[]
   selectedAgent: number | null
+  agentNames: Record<number, string>
   agentTools: Record<number, ToolActivity[]>
   agentStatuses: Record<number, string>
   subagentTools: Record<number, Record<string, ToolActivity[]>>
@@ -62,13 +63,13 @@ const GATEWAY_RECENT_ACTIVE_WINDOW_MS = 120_000
 const GATEWAY_WAITING_WINDOW_MS = 300_000
 
 const DEFAULT_BROWSER_AGENTS: Array<{ id: string; name: string }> = [
-  { id: 'main', name: 'Workspace Sovereign' },
-  { id: 'sovereign-aegis', name: 'Sovereign-Aegis' },
-  { id: 'sovereign-apex', name: 'Sovereign-Apex' },
-  { id: 'sovereign-bastion', name: 'Sovereign-Bastion' },
-  { id: 'sovereign-herald', name: 'Sovereign-Herald' },
-  { id: 'sovereign-oracle', name: 'Sovereign-Oracle' },
-  { id: 'sovereign-sentinel', name: 'Sovereign-Sentinel' },
+  { id: 'main', name: 'Sovereign' },
+  { id: 'sovereign-aegis', name: 'Sovereign Aegis' },
+  { id: 'sovereign-apex', name: 'Sovereign Apex' },
+  { id: 'sovereign-bastion', name: 'Sovereign Bastion' },
+  { id: 'sovereign-herald', name: 'Sovereign Herald' },
+  { id: 'sovereign-oracle', name: 'Sovereign Oracle' },
+  { id: 'sovereign-sentinel', name: 'Sovereign Sentinel' },
 ]
 
 interface GatewayStoredSettings {
@@ -101,6 +102,35 @@ function asNonEmptyString(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function toTitleCase(raw: string): string {
+  return raw
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function normalizeAgentDisplayName(agentId: string, preferredName?: string): string {
+  const preferred = asNonEmptyString(preferredName)
+  if (preferred) return preferred
+
+  if (agentId === 'main') return 'Sovereign'
+  if (agentId.startsWith('sovereign-')) {
+    const suffix = agentId.slice('sovereign-'.length)
+    return `Sovereign ${toTitleCase(suffix)}`
+  }
+
+  return toTitleCase(agentId)
+}
+
+function toAutonomousFallbackStatus(message: string): string {
+  const normalized = message.toLowerCase()
+  if (/(gateway|transport|connect|sync|invalid)/i.test(normalized)) {
+    return 'Autonomous loop running while telemetry syncs'
+  }
+  return 'Autonomous standby heartbeat'
 }
 
 function getDefaultGatewayUrl(): string {
@@ -157,10 +187,18 @@ function startBrowserTelemetry(args: {
   officeState: OfficeState
   setAgents: Dispatch<SetStateAction<number[]>>
   setSelectedAgent: Dispatch<SetStateAction<number | null>>
+  setAgentNames: Dispatch<SetStateAction<Record<number, string>>>
   setAgentTools: Dispatch<SetStateAction<Record<number, ToolActivity[]>>>
   setAgentStatuses: Dispatch<SetStateAction<Record<number, string>>>
 }): () => void {
-  const { officeState, setAgents, setSelectedAgent, setAgentTools, setAgentStatuses } = args
+  const {
+    officeState,
+    setAgents,
+    setSelectedAgent,
+    setAgentNames,
+    setAgentTools,
+    setAgentStatuses,
+  } = args
   const settings = readGatewaySettings()
   const agentIdMap = new Map<string, number>()
 
@@ -173,6 +211,7 @@ function startBrowserTelemetry(args: {
   let syncInFlight = false
   let reconnectDelay = GATEWAY_RECONNECT_BASE_MS
   let disposed = false
+  let lastSnapshots: BrowserAgentSnapshot[] = []
 
   const pending = new Map<string, PendingGatewayRequest>()
 
@@ -218,12 +257,13 @@ function startBrowserTelemetry(args: {
 
     for (const agent of agents) {
       seenIds.add(agent.id)
+      const displayName = normalizeAgentDisplayName(agent.id, agent.name)
       const numericId = getNumericIdForAgent(agent.id)
       const existing = officeState.characters.get(numericId)
       if (existing) {
-        existing.folderName = agent.name
+        existing.folderName = displayName
       } else {
-        officeState.addAgent(numericId, undefined, undefined, undefined, true, agent.name)
+        officeState.addAgent(numericId, undefined, undefined, undefined, true, displayName)
       }
     }
 
@@ -236,13 +276,21 @@ function startBrowserTelemetry(args: {
 
   const applySnapshots = (snapshots: BrowserAgentSnapshot[]): void => {
     const orderedAgents = snapshots.map((snapshot) => snapshot.numericId).sort((a, b) => a - b)
+    const nextNames: Record<number, string> = {}
     const nextTools: Record<number, ToolActivity[]> = {}
     const nextStatuses: Record<number, string> = {}
 
     for (const snapshot of snapshots) {
+      const displayName = normalizeAgentDisplayName(snapshot.id, snapshot.name)
+      nextNames[snapshot.numericId] = displayName
       nextTools[snapshot.numericId] = snapshot.tools
       if (snapshot.status && snapshot.status !== 'active') {
         nextStatuses[snapshot.numericId] = snapshot.status
+      }
+
+      const existing = officeState.characters.get(snapshot.numericId)
+      if (existing) {
+        existing.folderName = displayName
       }
 
       const activeTool = snapshot.tools.find((tool) => !tool.done) ?? snapshot.tools[0]
@@ -250,7 +298,14 @@ function startBrowserTelemetry(args: {
       officeState.setAgentActive(snapshot.numericId, snapshot.active)
     }
 
+    lastSnapshots = snapshots.map((snapshot) => ({
+      ...snapshot,
+      name: normalizeAgentDisplayName(snapshot.id, snapshot.name),
+      tools: snapshot.tools.map((tool) => ({ ...tool })),
+    }))
+
     setAgents(orderedAgents)
+    setAgentNames(nextNames)
     setAgentTools(nextTools)
     setAgentStatuses(nextStatuses)
     setSelectedAgent((previous) => {
@@ -260,23 +315,38 @@ function startBrowserTelemetry(args: {
   }
 
   const seedFromMessage = (message: string): void => {
-    const seeded = DEFAULT_BROWSER_AGENTS.map((agent, index): BrowserAgentSnapshot => {
-      const numericId = getNumericIdForAgent(agent.id)
-      const existing = officeState.characters.get(numericId)
-      if (existing) {
-        existing.folderName = agent.name
-      } else {
-        officeState.addAgent(numericId, undefined, undefined, undefined, true, agent.name)
-      }
+    const fallbackToolStatus = toAutonomousFallbackStatus(message)
 
-      const active = index < 2
+    const knownRoster = [...agentIdMap.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([id, numericId]) => {
+        const existing = officeState.characters.get(numericId)
+        return {
+          id,
+          name: normalizeAgentDisplayName(id, existing?.folderName),
+          numericId,
+        }
+      })
+
+    const seedRoster = knownRoster.length > 0
+      ? knownRoster
+      : DEFAULT_BROWSER_AGENTS.map((agent) => {
+          const numericId = getNumericIdForAgent(agent.id)
+          return { id: agent.id, name: agent.name, numericId }
+        })
+
+    const seeded = seedRoster.map((agent, index): BrowserAgentSnapshot => {
+      const existingSnapshot = lastSnapshots.find((snapshot) => snapshot.id === agent.id)
+      const shouldStayActive = existingSnapshot?.active ?? index < 2
+
       return {
         id: agent.id,
-        name: agent.name,
-        numericId,
-        active,
-        tools: active
-          ? [{ toolId: `seed-${agent.id}`, status: message, done: false }]
+        name: normalizeAgentDisplayName(agent.id, existingSnapshot?.name ?? agent.name),
+        numericId: agent.numericId,
+        active: shouldStayActive,
+        status: shouldStayActive ? 'telemetry-sync' : 'autonomous-idle',
+        tools: shouldStayActive
+          ? [{ toolId: `seed-${agent.id}`, status: fallbackToolStatus, done: false }]
           : [],
       }
     })
@@ -317,7 +387,7 @@ function startBrowserTelemetry(args: {
         if (!isRecord(entry)) return null
         const id = asNonEmptyString(entry.id)
         if (!id) return null
-        const name = asNonEmptyString(entry.name) ?? id
+        const name = normalizeAgentDisplayName(id, asNonEmptyString(entry.name))
         return { id, name }
       })
       .filter((entry): entry is { id: string; name: string } => Boolean(entry))
@@ -367,14 +437,14 @@ function startBrowserTelemetry(args: {
       mergedAgentNames.set(agent.id, agent.name)
     }
     for (const [agentId] of recentAgeByAgent) {
-      if (!mergedAgentNames.has(agentId)) mergedAgentNames.set(agentId, agentId)
+      if (!mergedAgentNames.has(agentId)) mergedAgentNames.set(agentId, normalizeAgentDisplayName(agentId))
     }
     for (const [agentId] of runningCronByAgent) {
-      if (!mergedAgentNames.has(agentId)) mergedAgentNames.set(agentId, agentId)
+      if (!mergedAgentNames.has(agentId)) mergedAgentNames.set(agentId, normalizeAgentDisplayName(agentId))
     }
 
     const roster = mergedAgentNames.size > 0
-      ? [...mergedAgentNames.entries()].map(([id, name]) => ({ id, name }))
+      ? [...mergedAgentNames.entries()].map(([id, name]) => ({ id, name: normalizeAgentDisplayName(id, name) }))
       : DEFAULT_BROWSER_AGENTS
 
     syncAgentRoster(roster)
@@ -385,11 +455,12 @@ function startBrowserTelemetry(args: {
       const recentAgeMs = recentAgeByAgent.get(agent.id)
 
       let tools: ToolActivity[] = []
-      let status: string | undefined
+      let status: string | undefined = 'autonomous-idle'
       let active = false
 
       if (runningCron.length > 0) {
         active = true
+        status = undefined
         tools = runningCron.slice(0, 3).map((job) => {
           const elapsedSec = Math.max(0, Math.floor((Date.now() - job.runningAtMs) / 1000))
           return {
@@ -400,6 +471,7 @@ function startBrowserTelemetry(args: {
         })
       } else if (typeof recentAgeMs === 'number' && recentAgeMs <= GATEWAY_RECENT_ACTIVE_WINDOW_MS) {
         active = true
+        status = undefined
         tools = [{
           toolId: `recent:${agent.id}`,
           status: `Recent activity ${Math.max(1, Math.floor(recentAgeMs / 1000))}s ago`,
@@ -418,6 +490,7 @@ function startBrowserTelemetry(args: {
       )
       for (const snapshot of byRecent.slice(0, Math.min(2, byRecent.length))) {
         snapshot.active = true
+        snapshot.status = undefined
         snapshot.tools = [{ toolId: `heartbeat:${snapshot.id}`, status: 'Standby heartbeat', done: false }]
       }
     }
@@ -450,8 +523,7 @@ function startBrowserTelemetry(args: {
       })
       applySnapshots(snapshots)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      seedFromMessage(`Gateway sync error: ${message}`)
+      seedFromMessage('Telemetry sync recovery in progress')
     } finally {
       syncInFlight = false
       scheduleNextSync()
@@ -497,9 +569,8 @@ function startBrowserTelemetry(args: {
         reconnectDelay = GATEWAY_RECONNECT_BASE_MS
         void syncNow()
       })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error)
-        seedFromMessage(`Gateway connect failed: ${message}`)
+      .catch(() => {
+        seedFromMessage('Telemetry auth handshake retry in progress')
         try {
           socket?.close()
         } catch {
@@ -568,9 +639,8 @@ function startBrowserTelemetry(args: {
 
     try {
       socket = new WebSocket(settings.url)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      seedFromMessage(`Invalid gateway URL: ${message}`)
+    } catch {
+      seedFromMessage('Telemetry endpoint validation in progress')
       scheduleReconnect()
       return
     }
@@ -587,16 +657,16 @@ function startBrowserTelemetry(args: {
       clearConnectDelayTimer()
       clearPollTimer()
       rejectAllPending('gateway disconnected')
-      seedFromMessage('Gateway disconnected — retrying…')
+      seedFromMessage('Telemetry link recovery in progress')
       scheduleReconnect()
     })
 
     socket.addEventListener('error', () => {
-      seedFromMessage('Gateway transport error')
+      seedFromMessage('Telemetry transport recovery in progress')
     })
   }
 
-  seedFromMessage('Connecting to OpenClaw gateway…')
+  seedFromMessage('Telemetry connection startup in progress')
   openSocket()
 
   return () => {
@@ -630,6 +700,7 @@ export function useExtensionMessages(
 ): ExtensionMessageState {
   const [agents, setAgents] = useState<number[]>([])
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null)
+  const [agentNames, setAgentNames] = useState<Record<number, string>>({})
   const [agentTools, setAgentTools] = useState<Record<number, ToolActivity[]>>({})
   const [agentStatuses, setAgentStatuses] = useState<Record<number, string>>({})
   const [subagentTools, setSubagentTools] = useState<Record<number, Record<string, ToolActivity[]>>>({})
@@ -679,6 +750,10 @@ export function useExtensionMessages(
         const folderName = msg.folderName as string | undefined
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]))
         setSelectedAgent(id)
+        setAgentNames((prev) => ({
+          ...prev,
+          [id]: folderName?.trim() || prev[id] || `Agent #${id}`,
+        }))
         os.addAgent(id, undefined, undefined, undefined, undefined, folderName)
         saveAgentSeats(os)
       } else if (msg.type === 'agentClosed') {
@@ -692,6 +767,12 @@ export function useExtensionMessages(
           return next
         })
         setAgentStatuses((prev) => {
+          if (!(id in prev)) return prev
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+        setAgentNames((prev) => {
           if (!(id in prev)) return prev
           const next = { ...prev }
           delete next[id]
@@ -716,6 +797,14 @@ export function useExtensionMessages(
           const m = meta[id]
           pendingAgents.push({ id, palette: m?.palette, hueShift: m?.hueShift, seatId: m?.seatId, folderName: folderNames[id] })
         }
+        setAgentNames((prev) => {
+          const next = { ...prev }
+          for (const id of incoming) {
+            const displayName = folderNames[id]?.trim() || prev[id] || `Agent #${id}`
+            next[id] = displayName
+          }
+          return next
+        })
         setAgents((prev) => {
           const ids = new Set(prev)
           const merged = [...prev]
@@ -935,6 +1024,7 @@ export function useExtensionMessages(
         officeState: os,
         setAgents,
         setSelectedAgent,
+        setAgentNames,
         setAgentTools,
         setAgentStatuses,
       })
@@ -946,5 +1036,16 @@ export function useExtensionMessages(
     }
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders }
+  return {
+    agents,
+    selectedAgent,
+    agentNames,
+    agentTools,
+    agentStatuses,
+    subagentTools,
+    subagentCharacters,
+    layoutReady,
+    loadedAssets,
+    workspaceFolders,
+  }
 }
