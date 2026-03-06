@@ -94,6 +94,68 @@ interface ZDrawable {
   draw: (ctx: CanvasRenderingContext2D) => void
 }
 
+const IDENTITY_MARKER_COLORS = ['#ff5f57', '#00c2ff', '#ffd166', '#7ee081', '#c792ea', '#ff9f1c', '#5eead4', '#f472b6']
+const IDENTITY_MARKER_PATTERNS: number[][][] = [
+  [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ],
+  [
+    [0, 1, 0],
+    [1, 1, 1],
+    [0, 1, 0],
+  ],
+  [
+    [1, 1, 1],
+    [0, 1, 0],
+    [1, 1, 1],
+  ],
+  [
+    [1, 0, 1],
+    [0, 1, 0],
+    [1, 0, 1],
+  ],
+  [
+    [1, 1, 0],
+    [1, 0, 1],
+    [0, 1, 1],
+  ],
+  [
+    [0, 1, 1],
+    [1, 1, 0],
+    [1, 0, 1],
+  ],
+]
+
+function renderIdentityMarker(
+  ctx: CanvasRenderingContext2D,
+  ch: Character,
+  drawX: number,
+  drawY: number,
+  zoom: number,
+): void {
+  const pattern = IDENTITY_MARKER_PATTERNS[Math.abs(ch.id) % IDENTITY_MARKER_PATTERNS.length]
+  const color = IDENTITY_MARKER_COLORS[Math.abs(ch.id) % IDENTITY_MARKER_COLORS.length]
+  const px = Math.max(1, Math.round(zoom))
+
+  const markerX = Math.round(drawX + 6 * zoom)
+  const markerY = Math.round(drawY + 11 * zoom)
+  const markerW = pattern[0].length * px
+  const markerH = pattern.length * px
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)'
+  ctx.fillRect(markerX - px, markerY - px, markerW + px * 2, markerH + px * 2)
+
+  ctx.fillStyle = color
+  for (let r = 0; r < pattern.length; r++) {
+    for (let c = 0; c < pattern[r].length; c++) {
+      if (!pattern[r][c]) continue
+      ctx.fillRect(markerX + c * px, markerY + r * px, px, px)
+    }
+  }
+}
+
 export function renderScene(
   ctx: CanvasRenderingContext2D,
   furniture: FurnitureInstance[],
@@ -174,6 +236,7 @@ export function renderScene(
       zY: charZY,
       draw: (c) => {
         c.drawImage(cached, drawX, drawY)
+        renderIdentityMarker(c, ch, drawX, drawY, zoom)
       },
     })
   }

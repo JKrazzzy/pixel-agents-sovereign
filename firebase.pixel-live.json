@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "pixel-agents-live-unr",
+    "site": "pixel-agents-live-260305",
     "public": "dist/webview",
     "ignore": [
       "firebase.json",

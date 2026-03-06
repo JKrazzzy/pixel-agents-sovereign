@@ -323,12 +323,12 @@ export const BUBBLE_WAITING_SPRITE: SpriteData = (() => {
 
 /** Palette colors for 6 distinct agent characters */
 export const CHARACTER_PALETTES = [
-  { skin: '#FFCC99', shirt: '#4488CC', pants: '#334466', hair: '#553322', shoes: '#222222' },
-  { skin: '#FFCC99', shirt: '#CC4444', pants: '#333333', hair: '#FFD700', shoes: '#222222' },
-  { skin: '#DEB887', shirt: '#44AA66', pants: '#334444', hair: '#222222', shoes: '#333333' },
-  { skin: '#FFCC99', shirt: '#AA55CC', pants: '#443355', hair: '#AA4422', shoes: '#222222' },
-  { skin: '#DEB887', shirt: '#CCAA33', pants: '#444433', hair: '#553322', shoes: '#333333' },
-  { skin: '#FFCC99', shirt: '#FF8844', pants: '#443322', hair: '#111111', shoes: '#222222' },
+  { skin: '#F8C79B', shirt: '#2A7BEA', pants: '#1C3A66', hair: '#4B2E1F', shoes: '#1B1B1B' },
+  { skin: '#F4CAA0', shirt: '#D84B3A', pants: '#3A2B2B', hair: '#E0B321', shoes: '#1E1E1E' },
+  { skin: '#C8986D', shirt: '#2FAD75', pants: '#244C3F', hair: '#1A1A1A', shoes: '#2A2A2A' },
+  { skin: '#F2C39A', shirt: '#8C5BE6', pants: '#322552', hair: '#B3471E', shoes: '#1D1D1D' },
+  { skin: '#A97C57', shirt: '#D7B535', pants: '#4A3E1E', hair: '#2C1D14', shoes: '#252525' },
+  { skin: '#EAB98A', shirt: '#17A2B8', pants: '#1A4C56', hair: '#F1F1F1', shoes: '#141414' },
 ] as const
 
 interface CharPalette {

@@ -1,4 +1,4 @@
-import { TILE_SIZE, MATRIX_EFFECT_DURATION, CharacterState, Direction } from '../types.js'
+import { TILE_SIZE, MATRIX_EFFECT_DURATION, CharacterState, Direction, FurnitureType, TileType } from '../types.js'
 import {
   PALETTE_COUNT,
   HUE_SHIFT_MIN_DEG,
@@ -494,11 +494,52 @@ export class OfficeState {
     return this.subagentIdMap.get(`${parentAgentId}:${parentToolId}`) ?? null
   }
 
+  private releaseSeat(seatId: string | null): void {
+    if (!seatId) return
+    const seat = this.seats.get(seatId)
+    if (seat) seat.assigned = false
+  }
+
+  private assignNearestWorkingSeat(ch: Character): void {
+    const candidates: Array<{ seatId: string; seat: Seat; distance: number }> = []
+
+    for (const [seatId, seat] of this.seats) {
+      if (seat.assigned) continue
+      const distance = Math.abs(seat.seatCol - ch.tileCol) + Math.abs(seat.seatRow - ch.tileRow)
+      candidates.push({ seatId, seat, distance })
+    }
+
+    if (candidates.length === 0) return
+    candidates.sort((a, b) => a.distance - b.distance)
+
+    // Pick from the three closest seats for variety while still feeling intentional.
+    const pool = candidates.slice(0, Math.min(3, candidates.length))
+    const chosen = pool[Math.floor(Math.random() * pool.length)]
+    chosen.seat.assigned = true
+    ch.seatId = chosen.seatId
+  }
+
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id)
     if (ch) {
+      const wasActive = ch.isActive
       ch.isActive = active
+
+      if (active && !wasActive && !ch.isSubagent) {
+        // Re-seat on each new work cycle so agents don't always snap back to one fixed desk.
+        this.releaseSeat(ch.seatId)
+        ch.seatId = null
+        this.assignNearestWorkingSeat(ch)
+        if (ch.seatId) {
+          this.sendToSeat(id)
+        }
+      }
+
       if (!active) {
+        if (!ch.isSubagent) {
+          this.releaseSeat(ch.seatId)
+          ch.seatId = null
+        }
         // Sentinel -1: signals turn just ended, skip next seat rest timer.
         // Prevents the WALK handler from setting a 2-4 min rest on arrival.
         ch.seatTimer = -1
@@ -513,6 +554,7 @@ export class OfficeState {
   private rebuildFurnitureInstances(): void {
     // Collect tiles where active agents face desks
     const autoOnTiles = new Set<string>()
+    const activeDeskFrontTiles = new Map<string, { col: number; row: number; agentId: number }>()
     for (const ch of this.characters.values()) {
       if (!ch.isActive || !ch.seatId) continue
       const seat = this.seats.get(ch.seatId)
@@ -520,6 +562,19 @@ export class OfficeState {
       // Find the desk tile(s) the agent faces from their seat
       const dCol = seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0
       const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0
+
+      const frontCol = seat.seatCol + dCol
+      const frontRow = seat.seatRow + dRow
+      if (
+        frontCol >= 0 && frontCol < this.layout.cols
+        && frontRow >= 0 && frontRow < this.layout.rows
+      ) {
+        const tile = this.tileMap[frontRow][frontCol]
+        if (tile !== TileType.WALL && tile !== TileType.VOID) {
+          activeDeskFrontTiles.set(`${frontCol},${frontRow}`, { col: frontCol, row: frontRow, agentId: ch.id })
+        }
+      }
+
       // Check tiles in the facing direction (desk could be 1-3 tiles deep)
       for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
         const tileCol = seat.seatCol + dCol * d
@@ -542,15 +597,11 @@ export class OfficeState {
       }
     }
 
-    if (autoOnTiles.size === 0) {
-      this.furniture = layoutToFurnitureInstances(this.layout.furniture)
-      return
-    }
-
     // Build modified furniture list with auto-state applied
     const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
       const entry = getCatalogEntry(item.type)
       if (!entry) return item
+      if (autoOnTiles.size === 0) return item
       // Check if any tile of this furniture overlaps an auto-on tile
       for (let dr = 0; dr < entry.footprintH; dr++) {
         for (let dc = 0; dc < entry.footprintW; dc++) {
@@ -566,7 +617,33 @@ export class OfficeState {
       return item
     })
 
-    this.furniture = layoutToFurnitureInstances(modifiedFurniture)
+    const hasElectronicsAtTile = (col: number, row: number, items: PlacedFurniture[]): boolean => {
+      for (const item of items) {
+        const entry = getCatalogEntry(item.type)
+        if (!entry || entry.category !== 'electronics') continue
+        for (let dr = 0; dr < entry.footprintH; dr++) {
+          for (let dc = 0; dc < entry.footprintW; dc++) {
+            if (item.col + dc === col && item.row + dr === row) {
+              return true
+            }
+          }
+        }
+      }
+      return false
+    }
+
+    const furnitureWithWorkstations: PlacedFurniture[] = [...modifiedFurniture]
+    for (const tile of activeDeskFrontTiles.values()) {
+      if (hasElectronicsAtTile(tile.col, tile.row, furnitureWithWorkstations)) continue
+      furnitureWithWorkstations.push({
+        uid: `work-pc-${tile.agentId}`,
+        type: FurnitureType.PC,
+        col: tile.col,
+        row: tile.row,
+      })
+    }
+
+    this.furniture = layoutToFurnitureInstances(furnitureWithWorkstations)
   }
 
   setAgentTool(id: number, tool: string | null): void {

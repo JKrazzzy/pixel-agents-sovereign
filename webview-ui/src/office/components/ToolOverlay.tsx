@@ -9,6 +9,7 @@ interface ToolOverlayProps {
   officeState: OfficeState
   agents: number[]
   agentTools: Record<number, ToolActivity[]>
+  agentStatuses: Record<number, string>
   subagentCharacters: SubagentCharacter[]
   containerRef: React.RefObject<HTMLDivElement | null>
   zoom: number
@@ -16,34 +17,76 @@ interface ToolOverlayProps {
   onCloseAgent: (id: number) => void
 }
 
-/** Derive a short human-readable activity string from tools/status */
-function getActivityText(
+function humanizeStatus(status: string | undefined): string | undefined {
+  if (!status || status === 'active') return undefined
+  if (status === 'waiting') return 'Awaiting input or approval'
+  if (/gateway disconnected/i.test(status)) return 'Gateway disconnected, retrying now'
+  if (/connecting/i.test(status)) return 'Connecting to OpenClaw gateway'
+  if (/transport error/i.test(status)) return 'Gateway transport error detected'
+  return status
+}
+
+function getMainAgentSynopsis(
   agentId: number,
-  agentTools: Record<number, ToolActivity[]>,
+  folderName: string | undefined,
   isActive: boolean,
-): string {
-  const tools = agentTools[agentId]
-  if (tools && tools.length > 0) {
-    // Find the latest non-done tool
-    const activeTool = [...tools].reverse().find((t) => !t.done)
-    if (activeTool) {
-      if (activeTool.permissionWait) return 'Needs approval'
-      return activeTool.status
-    }
-    // All tools done but agent still active (mid-turn) — keep showing last tool status
-    if (isActive) {
-      const lastTool = tools[tools.length - 1]
-      if (lastTool) return lastTool.status
+  agentTools: Record<number, ToolActivity[]>,
+  agentStatuses: Record<number, string>,
+): string[] {
+  const tools = agentTools[agentId] || []
+  const status = agentStatuses[agentId]
+  const activeTool = [...tools].reverse().find((tool) => !tool.done)
+  const pendingCount = tools.filter((tool) => !tool.done).length
+  const doneCount = tools.filter((tool) => tool.done).length
+
+  const bullets: string[] = []
+
+  if (activeTool) {
+    bullets.push(activeTool.permissionWait ? 'Waiting for approval before next action' : activeTool.status)
+  } else {
+    const normalizedStatus = humanizeStatus(status)
+    if (normalizedStatus) {
+      bullets.push(normalizedStatus)
     }
   }
 
-  return 'Idle'
+  if (pendingCount > 1) {
+    bullets.push(`Working through ${pendingCount} active items`)
+  } else if (doneCount > 0) {
+    bullets.push(`${doneCount} recent task${doneCount === 1 ? '' : 's'} completed`)
+  } else if (isActive) {
+    bullets.push('Seated at desk and ready for incoming work')
+  } else {
+    bullets.push('Idle roam mode while monitoring for new tasks')
+  }
+
+  if (folderName) {
+    bullets.push(`Workspace: ${folderName}`)
+  } else if (isActive) {
+    bullets.push('Desk systems online')
+  } else {
+    bullets.push('Patrolling shared office')
+  }
+
+  return bullets.slice(0, 3)
+}
+
+function getSubagentSynopsis(
+  sub: SubagentCharacter | undefined,
+  folderName: string | undefined,
+): string[] {
+  const bullets: string[] = []
+  bullets.push(sub?.label ? `Subtask: ${sub.label}` : 'Subtask worker active')
+  bullets.push(sub ? `Supporting Agent #${sub.parentAgentId}` : 'Supporting parent workflow')
+  bullets.push(folderName ? `Workspace: ${folderName}` : 'Coordinating in shared office')
+  return bullets.slice(0, 3)
 }
 
 export function ToolOverlay({
   officeState,
   agents,
   agentTools,
+  agentStatuses,
   subagentCharacters,
   containerRef,
   zoom,
@@ -97,29 +140,30 @@ export function ToolOverlay({
         const screenX = (deviceOffsetX + ch.x * zoom) / dpr
         const screenY = (deviceOffsetY + (ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) / dpr
 
-        // Get activity text
+        // Build heading and synopsis bullets
+        const sub = isSub ? subagentCharacters.find((entry) => entry.id === id) : undefined
+        const title = isSub ? 'Subtask Support' : `Agent #${id}`
+
         const subHasPermission = isSub && ch.bubbleType === 'permission'
-        let activityText: string
-        if (isSub) {
-          if (subHasPermission) {
-            activityText = 'Needs approval'
-          } else {
-            const sub = subagentCharacters.find((s) => s.id === id)
-            activityText = sub ? sub.label : 'Subtask'
-          }
-        } else {
-          activityText = getActivityText(id, agentTools, ch.isActive)
-        }
+        const synopsis = isSub
+          ? getSubagentSynopsis(sub, ch.folderName)
+          : getMainAgentSynopsis(id, ch.folderName, ch.isActive, agentTools, agentStatuses)
 
         // Determine dot color
         const tools = agentTools[id]
-        const hasPermission = subHasPermission || tools?.some((t) => t.permissionWait && !t.done)
+        const hasPermission = subHasPermission || tools?.some((tool) => tool.permissionWait && !tool.done)
         const hasActiveTools = tools?.some((t) => !t.done)
         const isActive = ch.isActive
+        const status = !isSub ? agentStatuses[id] : undefined
+        const hasGatewayIssue = !!status && status !== 'waiting' && /gateway|connect|transport|error/i.test(status)
 
         let dotColor: string | null = null
         if (hasPermission) {
           dotColor = 'var(--pixel-status-permission)'
+        } else if (hasGatewayIssue) {
+          dotColor = 'var(--pixel-status-error)'
+        } else if (status === 'waiting') {
+          dotColor = 'var(--pixel-status-waiting)'
         } else if (isActive && hasActiveTools) {
           dotColor = 'var(--pixel-status-active)'
         }
@@ -142,57 +186,60 @@ export function ToolOverlay({
             <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 5,
+                alignItems: 'flex-start',
+                gap: 6,
                 background: 'var(--pixel-bg)',
                 border: isSelected
                   ? '2px solid var(--pixel-border-light)'
                   : '2px solid var(--pixel-border)',
                 borderRadius: 0,
-                padding: isSelected ? '3px 6px 3px 8px' : '3px 8px',
+                padding: isSelected ? '4px 6px 4px 8px' : '4px 8px',
                 boxShadow: 'var(--pixel-shadow)',
-                whiteSpace: 'nowrap',
-                maxWidth: 220,
+                maxWidth: 320,
               }}
             >
               {dotColor && (
                 <span
-                  className={isActive && !hasPermission ? 'pixel-agents-pulse' : undefined}
+                    className={isActive && !hasPermission && !hasGatewayIssue ? 'pixel-agents-pulse' : undefined}
                   style={{
                     width: 6,
                     height: 6,
                     borderRadius: '50%',
                     background: dotColor,
                     flexShrink: 0,
+                      marginTop: 6,
                   }}
                 />
               )}
-              <div style={{ overflow: 'hidden' }}>
+                <div style={{ overflow: 'hidden', minWidth: 0 }}>
                 <span
                   style={{
-                    fontSize: isSub ? '20px' : '22px',
-                    fontStyle: isSub ? 'italic' : undefined,
+                      fontSize: '20px',
+                      fontStyle: isSub ? 'italic' : undefined,
                     color: 'var(--vscode-foreground)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     display: 'block',
+                      marginBottom: 1,
                   }}
                 >
-                  {activityText}
+                    {title}
                 </span>
-                {ch.folderName && (
+                  {synopsis.map((line, index) => (
                   <span
+                      key={`${id}-synopsis-${index}`}
                     style={{
-                      fontSize: '16px',
+                        fontSize: '16px',
                       color: 'var(--pixel-text-dim)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       display: 'block',
+                        whiteSpace: 'nowrap',
                     }}
                   >
-                    {ch.folderName}
+                      • {line}
                   </span>
-                )}
+                  ))}
               </div>
               {isSelected && !isSub && (
                 <button
@@ -207,7 +254,7 @@ export function ToolOverlay({
                     color: 'var(--pixel-close-text)',
                     cursor: 'pointer',
                     padding: '0 2px',
-                    fontSize: '26px',
+                    fontSize: '24px',
                     lineHeight: 1,
                     marginLeft: 2,
                     flexShrink: 0,

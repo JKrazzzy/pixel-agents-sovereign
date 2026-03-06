@@ -207,8 +207,8 @@ export function getSeatTiles(seats: Map<string, Seat>): Set<string> {
 /** Default floor colors for the two rooms */
 const DEFAULT_LEFT_ROOM_COLOR: FloorColor = { h: 35, s: 30, b: 15, c: 0 }  // warm beige
 const DEFAULT_RIGHT_ROOM_COLOR: FloorColor = { h: 25, s: 45, b: 5, c: 10 }  // warm brown
-const DEFAULT_CARPET_COLOR: FloorColor = { h: 280, s: 40, b: -5, c: 0 }     // purple
-const DEFAULT_DOORWAY_COLOR: FloorColor = { h: 35, s: 25, b: 10, c: 0 }     // tan
+const DEFAULT_COLLAB_COLOR: FloorColor = { h: 198, s: 22, b: -8, c: 6 }      // cool slate
+const DEFAULT_WALKWAY_COLOR: FloorColor = { h: 40, s: 22, b: 12, c: 0 }      // warm walkway
 
 /** Create the default office layout matching the current hardcoded office */
 export function createDefaultLayout(): OfficeLayout {
@@ -225,17 +225,22 @@ export function createDefaultLayout(): OfficeLayout {
     for (let c = 0; c < DEFAULT_COLS; c++) {
       if (r === 0 || r === DEFAULT_ROWS - 1) { tiles.push(W); tileColors.push(null); continue }
       if (c === 0 || c === DEFAULT_COLS - 1) { tiles.push(W); tileColors.push(null); continue }
-      if (c === 10) {
-        if (r >= 4 && r <= 6) {
-          tiles.push(F4); tileColors.push(DEFAULT_DOORWAY_COLOR)
-        } else {
-          tiles.push(W); tileColors.push(null)
-        }
+
+      const isCentralWalkway = c >= 9 && c <= 10
+      const isCollaborationZone = r >= 7 && c >= 3 && c <= 16
+
+      if (isCentralWalkway) {
+        tiles.push(F4)
+        tileColors.push(DEFAULT_WALKWAY_COLOR)
         continue
       }
-      if (c >= 15 && c <= 18 && r >= 7 && r <= 9) {
-        tiles.push(F3); tileColors.push(DEFAULT_CARPET_COLOR); continue
+
+      if (isCollaborationZone) {
+        tiles.push(F3)
+        tileColors.push(DEFAULT_COLLAB_COLOR)
+        continue
       }
+
       if (c < 10) {
         tiles.push(F1); tileColors.push(DEFAULT_LEFT_ROOM_COLOR)
       } else {
@@ -245,23 +250,44 @@ export function createDefaultLayout(): OfficeLayout {
   }
 
   const furniture: PlacedFurniture[] = [
-    { uid: 'desk-left', type: FurnitureType.DESK, col: 4, row: 3 },
-    { uid: 'desk-right', type: FurnitureType.DESK, col: 13, row: 3 },
-    { uid: 'bookshelf-1', type: FurnitureType.BOOKSHELF, col: 1, row: 5 },
-    { uid: 'plant-left', type: FurnitureType.PLANT, col: 1, row: 1 },
-    { uid: 'cooler-1', type: FurnitureType.COOLER, col: 17, row: 7 },
-    { uid: 'plant-right', type: FurnitureType.PLANT, col: 18, row: 1 },
-    { uid: 'whiteboard-1', type: FurnitureType.WHITEBOARD, col: 15, row: 0 },
-    // Left desk chairs
-    { uid: 'chair-l-top', type: FurnitureType.CHAIR, col: 4, row: 2 },
-    { uid: 'chair-l-bottom', type: FurnitureType.CHAIR, col: 5, row: 5 },
-    { uid: 'chair-l-left', type: FurnitureType.CHAIR, col: 3, row: 4 },
-    { uid: 'chair-l-right', type: FurnitureType.CHAIR, col: 6, row: 3 },
-    // Right desk chairs
-    { uid: 'chair-r-top', type: FurnitureType.CHAIR, col: 13, row: 2 },
-    { uid: 'chair-r-bottom', type: FurnitureType.CHAIR, col: 14, row: 5 },
-    { uid: 'chair-r-left', type: FurnitureType.CHAIR, col: 12, row: 4 },
-    { uid: 'chair-r-right', type: FurnitureType.CHAIR, col: 15, row: 3 },
+    // Shared desk bench (north)
+    { uid: 'desk-n1', type: FurnitureType.DESK, col: 2, row: 2 },
+    { uid: 'desk-n2', type: FurnitureType.DESK, col: 6, row: 2 },
+    { uid: 'desk-n3', type: FurnitureType.DESK, col: 10, row: 2 },
+    { uid: 'desk-n4', type: FurnitureType.DESK, col: 14, row: 2 },
+
+    // Collaboration desks (south)
+    { uid: 'desk-c1', type: FurnitureType.DESK, col: 8, row: 6 },
+    { uid: 'desk-c2', type: FurnitureType.DESK, col: 11, row: 6 },
+
+    // North bench seating
+    { uid: 'chair-n1-s', type: FurnitureType.CHAIR, col: 2, row: 4 },
+    { uid: 'chair-n1-e', type: FurnitureType.CHAIR, col: 4, row: 2 },
+    { uid: 'chair-n2-s', type: FurnitureType.CHAIR, col: 6, row: 4 },
+    { uid: 'chair-n2-e', type: FurnitureType.CHAIR, col: 8, row: 2 },
+    { uid: 'chair-n3-s', type: FurnitureType.CHAIR, col: 10, row: 4 },
+    { uid: 'chair-n3-e', type: FurnitureType.CHAIR, col: 12, row: 2 },
+    { uid: 'chair-n4-s', type: FurnitureType.CHAIR, col: 14, row: 4 },
+    { uid: 'chair-n4-e', type: FurnitureType.CHAIR, col: 16, row: 2 },
+
+    // Collaboration seating ring
+    { uid: 'chair-c1-w', type: FurnitureType.CHAIR, col: 7, row: 6 },
+    { uid: 'chair-c1-s', type: FurnitureType.CHAIR, col: 8, row: 8 },
+    { uid: 'chair-c2-e', type: FurnitureType.CHAIR, col: 13, row: 6 },
+    { uid: 'chair-c2-s', type: FurnitureType.CHAIR, col: 12, row: 8 },
+
+    // Shared amenities and decor
+    { uid: 'bookshelf-west-1', type: FurnitureType.BOOKSHELF, col: 1, row: 2 },
+    { uid: 'bookshelf-west-2', type: FurnitureType.BOOKSHELF, col: 1, row: 5 },
+    { uid: 'bookshelf-east-1', type: FurnitureType.BOOKSHELF, col: 18, row: 2 },
+    { uid: 'bookshelf-east-2', type: FurnitureType.BOOKSHELF, col: 18, row: 5 },
+    { uid: 'whiteboard-main', type: FurnitureType.WHITEBOARD, col: 9, row: 0 },
+    { uid: 'plant-nw', type: FurnitureType.PLANT, col: 1, row: 1 },
+    { uid: 'plant-ne', type: FurnitureType.PLANT, col: 18, row: 1 },
+    { uid: 'plant-sw', type: FurnitureType.PLANT, col: 1, row: 9 },
+    { uid: 'cooler-se', type: FurnitureType.COOLER, col: 17, row: 8 },
+    { uid: 'lamp-collab-1', type: FurnitureType.LAMP, col: 9, row: 8 },
+    { uid: 'lamp-collab-2', type: FurnitureType.LAMP, col: 10, row: 8 },
   ]
 
   return { version: 1, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, tiles, tileColors, furniture }
@@ -314,11 +340,11 @@ function migrateLayout(layout: OfficeLayout): OfficeLayout {
       case 2: // was WOOD_FLOOR → FLOOR_2 brown
         tileColors.push(DEFAULT_RIGHT_ROOM_COLOR)
         break
-      case 3: // was CARPET → FLOOR_3 purple
-        tileColors.push(DEFAULT_CARPET_COLOR)
+      case 3: // was CARPET → FLOOR_3 collaboration zone
+        tileColors.push(DEFAULT_COLLAB_COLOR)
         break
-      case 4: // was DOORWAY → FLOOR_4 tan
-        tileColors.push(DEFAULT_DOORWAY_COLOR)
+      case 4: // was DOORWAY → FLOOR_4 walkway
+        tileColors.push(DEFAULT_WALKWAY_COLOR)
         break
       default:
         // New tile types (5-7) without colors — use neutral gray

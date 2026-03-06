@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "sovereign-infrastructure-d86fa",
+    "site": "pixel-agents-demo-260305",
     "public": "dist/webview",
     "ignore": [
       "firebase.json",
