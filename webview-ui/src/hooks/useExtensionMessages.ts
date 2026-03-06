@@ -291,6 +291,8 @@ function startBrowserTelemetry(args: {
       const existing = officeState.characters.get(snapshot.numericId)
       if (existing) {
         existing.folderName = displayName
+      } else {
+        officeState.addAgent(snapshot.numericId, undefined, undefined, undefined, true, displayName)
       }
 
       const activeTool = snapshot.tools.find((tool) => !tool.done) ?? snapshot.tools[0]
@@ -350,6 +352,11 @@ function startBrowserTelemetry(args: {
           : [],
       }
     })
+
+    syncAgentRoster(seedRoster.map((agent) => ({
+      id: agent.id,
+      name: normalizeAgentDisplayName(agent.id, agent.name),
+    })))
 
     applySnapshots(seeded)
   }
