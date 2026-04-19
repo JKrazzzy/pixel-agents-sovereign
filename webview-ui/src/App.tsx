@@ -223,6 +223,35 @@ function App() {
 
       <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
 
+      {/* APEX Portal chatbot badge */}
+      <a
+        href="https://sovereign-portal-live-2603.web.app"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          position: 'absolute',
+          top: 10,
+          right: 10,
+          zIndex: 'var(--pixel-controls-z)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'rgba(90, 140, 255, 0.12)',
+          border: '2px solid var(--pixel-accent)',
+          borderRadius: 0,
+          padding: '4px 10px',
+          boxShadow: 'var(--pixel-shadow)',
+          textDecoration: 'none',
+          color: 'rgba(200, 215, 255, 0.95)',
+          fontSize: '20px',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ color: 'var(--pixel-accent)', fontWeight: 'bold' }}>APEX</span>
+        <span style={{ color: 'rgba(255,255,255,0.4)' }}>|</span>
+        <span>Portal</span>
+      </a>
+
       {/* Vignette overlay */}
       <div
         style={{

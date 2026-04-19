@@ -61,6 +61,8 @@ const GATEWAY_POLL_INTERVAL_MS = 8_000
 const GATEWAY_REQUEST_TIMEOUT_MS = 12_000
 const GATEWAY_RECENT_ACTIVE_WINDOW_MS = 120_000
 const GATEWAY_WAITING_WINDOW_MS = 300_000
+const UNR_PORTAL_SPRINT_WINDOW_KEY = 'openclaw.minipixel.unrPortalSprint.startMs.2026-03-06'
+const UNR_PORTAL_SPRINT_WINDOW_MS = 7 * 60 * 60 * 1000
 
 const DEFAULT_BROWSER_AGENTS: Array<{ id: string; name: string }> = [
   { id: 'main', name: 'Sovereign' },
@@ -71,6 +73,16 @@ const DEFAULT_BROWSER_AGENTS: Array<{ id: string; name: string }> = [
   { id: 'sovereign-oracle', name: 'Sovereign Oracle' },
   { id: 'sovereign-sentinel', name: 'Sovereign Sentinel' },
 ]
+
+const UNR_PORTAL_TASK_BY_AGENT: Record<string, string> = {
+  main: 'Sovereign UNR portal mission command and blocker triage',
+  'sovereign-aegis': 'Sovereign UNR portal endpoint security verification',
+  'sovereign-apex': 'Sovereign UNR Portal chatbot backend — student assist and Canvas integration',
+  'sovereign-bastion': 'Sovereign UNR portal FERPA and NSHE compliance gate',
+  'sovereign-herald': 'Sovereign UNR portal rollout updates and startup integrity',
+  'sovereign-oracle': 'Sovereign UNR portal Canvas and M365 ingestion checks',
+  'sovereign-sentinel': 'Sovereign UNR portal OAuth continuity and runtime reliability',
+}
 
 interface GatewayStoredSettings {
   gatewayUrl?: string
@@ -131,6 +143,60 @@ function toAutonomousFallbackStatus(message: string): string {
     return 'Autonomous loop running while telemetry syncs'
   }
   return 'Autonomous standby heartbeat'
+}
+
+function readOrInitSprintWindowStartMs(nowMs = Date.now()): number {
+  try {
+    const raw = window.localStorage.getItem(UNR_PORTAL_SPRINT_WINDOW_KEY)
+    const parsed = raw ? Number(raw) : NaN
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed
+    }
+    window.localStorage.setItem(UNR_PORTAL_SPRINT_WINDOW_KEY, String(nowMs))
+  } catch {
+    // Ignore localStorage failures and default to current time.
+  }
+  return nowMs
+}
+
+function isUnrPortalSprintWindowActive(nowMs = Date.now()): boolean {
+  const startMs = readOrInitSprintWindowStartMs(nowMs)
+  return nowMs - startMs <= UNR_PORTAL_SPRINT_WINDOW_MS
+}
+
+function getUnrPortalTaskStatus(agentId: string): string {
+  const roleTask = UNR_PORTAL_TASK_BY_AGENT[agentId] ?? 'Sovereign UNR portal cross-team implementation support'
+  return `Sovereign UNR portal sprint: ${roleTask}`
+}
+
+function enforceUnrPortalSprintAssignments(snapshots: BrowserAgentSnapshot[]): BrowserAgentSnapshot[] {
+  if (!isUnrPortalSprintWindowActive()) {
+    return snapshots
+  }
+
+  return snapshots.map((snapshot) => {
+    const portalToolId = `portal-sprint:${snapshot.id}`
+    const portalToolStatus = getUnrPortalTaskStatus(snapshot.id)
+
+    const tools = snapshot.tools.some((tool) => tool.toolId === portalToolId)
+      ? snapshot.tools.map((tool) => (
+          tool.toolId === portalToolId
+            ? { ...tool, status: portalToolStatus, done: false }
+            : tool
+        ))
+      : [...snapshot.tools, {
+          toolId: portalToolId,
+          status: portalToolStatus,
+          done: false,
+        }]
+
+    return {
+      ...snapshot,
+      active: true,
+      status: undefined,
+      tools,
+    }
+  })
 }
 
 function getDefaultGatewayUrl(): string {
@@ -353,12 +419,14 @@ function startBrowserTelemetry(args: {
       }
     })
 
+    const seededWithSprint = enforceUnrPortalSprintAssignments(seeded)
+
     syncAgentRoster(seedRoster.map((agent) => ({
       id: agent.id,
       name: normalizeAgentDisplayName(agent.id, agent.name),
     })))
 
-    applySnapshots(seeded)
+    applySnapshots(seededWithSprint)
   }
 
   const requestGateway = (method: string, params: Record<string, unknown> = {}): Promise<unknown> => {
@@ -449,6 +517,11 @@ function startBrowserTelemetry(args: {
     for (const [agentId] of runningCronByAgent) {
       if (!mergedAgentNames.has(agentId)) mergedAgentNames.set(agentId, normalizeAgentDisplayName(agentId))
     }
+    for (const agent of DEFAULT_BROWSER_AGENTS) {
+      if (!mergedAgentNames.has(agent.id)) {
+        mergedAgentNames.set(agent.id, agent.name)
+      }
+    }
 
     const roster = mergedAgentNames.size > 0
       ? [...mergedAgentNames.entries()].map(([id, name]) => ({ id, name: normalizeAgentDisplayName(id, name) }))
@@ -502,7 +575,7 @@ function startBrowserTelemetry(args: {
       }
     }
 
-    return snapshots
+    return enforceUnrPortalSprintAssignments(snapshots)
   }
 
   const scheduleNextSync = (): void => {

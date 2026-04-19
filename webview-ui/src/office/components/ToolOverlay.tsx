@@ -18,6 +18,8 @@ interface ToolOverlayProps {
   onCloseAgent: (id: number) => void
 }
 
+const APEX_DISPLAY_NAME = 'Sovereign Apex'
+
 function normalizeActivityText(status: string): string {
   if (/(gateway disconnected|gateway transport error|gateway connect failed|gateway sync error|connecting to openclaw gateway)/i.test(status)) {
     return 'Autonomous loop running while telemetry syncs'
@@ -91,6 +93,16 @@ function getMainAgentSynopsis(
     } else {
       bullets.push('Patrolling shared office')
     }
+  }
+
+  // Sovereign Apex: showcase chatbot backend role for the UNR Academic Portal
+  if (displayName === APEX_DISPLAY_NAME) {
+    const currentActivity = bullets[0] ?? (isActive ? 'Portal chatbot endpoint live' : 'Awaiting student queries')
+    return [
+      currentActivity,
+      'UNR Portal backend chatbot & student assist',
+      'Canvas grades, assignments & M365 sync',
+    ]
   }
 
   return bullets.slice(0, 3)
